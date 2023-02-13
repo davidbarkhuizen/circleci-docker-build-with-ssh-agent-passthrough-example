@@ -1,0 +1,95 @@
+ #!/usr/bin/env bash
+
+declare -A config
+
+dockerfile_path=""
+image_name=""
+image_tag=""
+container_name=""
+ssh_key_file_path=""
+
+function load_config_from_file {
+    config_file_path=$1
+
+    # expected file format: line-separated key=value pairs
+    # e.g
+    #
+    # dockerfile_path="py27.Dockerfile"
+    # image_name="cimg_py27"
+
+    readarray -t lines < "$config_file_path"
+
+    for line in "${lines[@]}"; do
+        key=${line%%=*}
+        value=${line#*=}
+        config[$key]=$value  ## Or simply ary[${line%%=*}]=${line#*=}
+        echo "$key=$value"
+    done
+
+    dockerfile_path=${config[dockerfile_path]}
+    image_name=${config[image_name]}
+    image_tag=${config[image_tag]}
+    container_name=${config[container_name]}
+    ssh_key_file_path=${config[ssh_key_file_path]}
+}
+
+function configure_buildkit {
+
+    export DOCKER_BUILDKIT=1;
+    export BUILDKIT_PROGRESS=plain;
+}
+
+function build {
+
+    configure_buildkit
+    cmd="docker build -f $dockerfile_path --tag $image_name:$image_tag --ssh default=$ssh_key_file_path --no-cache ."
+    echo $cmd
+    eval $cmd
+}
+
+function bash {
+    docker exec -it $container_name /bin/sh;
+}
+
+function run {
+    docker run \
+        --name=$container_name \
+        -d $image_name:$image_tag \
+        -v $(dirname $SSH_AUTH_SOCK):$(dirname $SSH_AUTH_SOCK) \
+        -e SSH_AUTH_SOCK=$SSH_AUTH_SOCK \
+        tail -f /dev/null
+}
+
+function kill {
+    docker stop $container_name;
+    docker rm $container_name;
+}
+
+function usage {
+    echo "./dkr build|run|bash|kill"
+}
+
+load_config_from_file "dkr.config"
+
+case $1 in 
+
+    "build")
+        build
+    ;;
+
+    "run")
+        run
+    ;;
+
+    "kill")
+        kill
+    ;;
+
+    "bash")
+        bash
+    ;;
+
+    *)
+        usage
+    ;;
+esac
