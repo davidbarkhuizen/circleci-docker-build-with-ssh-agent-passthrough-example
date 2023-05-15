@@ -1,6 +1,9 @@
- #!/usr/bin/env bash
+#!/usr/bin/env bash
 
-declare -A config
+zsh=false
+if [ "${SHELL}" = "/bin/zsh" ]; then
+   zsh=true
+fi
 
 dockerfile_path=""
 image_name=""
@@ -12,25 +15,38 @@ function load_config_from_file {
     config_file_path=$1
 
     # expected file format: line-separated key=value pairs
+    # values do not need to be quoted
     # e.g
     #
-    # dockerfile_path="py27.Dockerfile"
-    # image_name="cimg_py27"
+    # image_name=cimg_py27
 
-    readarray -t lines < "$config_file_path"
-
-    for line in "${lines[@]}"; do
+    while read -r line; do
         key=${line%%=*}
         value=${line#*=}
-        config[$key]=$value  ## Or simply ary[${line%%=*}]=${line#*=}
-        echo "$key=$value"
-    done
 
-    dockerfile_path=${config[dockerfile_path]}
-    image_name=${config[image_name]}
-    image_tag=${config[image_tag]}
-    container_name=${config[container_name]}
-    ssh_key_file_path=${config[ssh_key_file_path]}
+        case $key in 
+
+            "dockerfile_path")
+                dockerfile_path=$value
+            ;;
+
+            "image_name")
+                image_name=$value
+            ;;
+
+            "image_tag")
+                image_tag=$value
+            ;;
+
+            "container_name")
+                container_name=$value
+            ;;
+
+            "ssh_key_file_path")
+                ssh_key_file_path=$value
+            ;;
+        esac
+    done < "$config_file_path"
 }
 
 function configure_buildkit {
@@ -42,7 +58,14 @@ function configure_buildkit {
 function build {
 
     configure_buildkit
-    cmd="docker build -f $dockerfile_path --tag $image_name:$image_tag --ssh default=$ssh_key_file_path --no-cache ."
+
+    cmd="docker build -f $dockerfile_path --tag $image_name:$image_tag --no-cache"
+
+    if [ "$ssh_key_file_path" != "" ]; then
+        cmd+=" --ssh default=$ssh_key_file_path"
+    fi
+
+    cmd+=" ."
     echo $cmd
     eval $cmd
 }
@@ -55,8 +78,9 @@ function run {
     docker run \
         --name=$container_name \
         -d $image_name:$image_tag \
-        -v $(dirname $SSH_AUTH_SOCK):$(dirname $SSH_AUTH_SOCK) \
-        -e SSH_AUTH_SOCK=$SSH_AUTH_SOCK \
+        # TODO
+        # -v $(dirname $SSH_AUTH_SOCK):$(dirname $SSH_AUTH_SOCK) \
+        # -e SSH_AUTH_SOCK=$SSH_AUTH_SOCK \
         tail -f /dev/null
 }
 
